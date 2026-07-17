@@ -515,6 +515,36 @@ int64_t eshkol_vqe_make_pauli5_hamiltonian(double g0, double g1, double g2,
     return store_hamiltonian(h, "make-pauli5-hamiltonian: Moonlab allocation failed");
 }
 
+/* Quantum geometric tensor (Fubini-Study metric) of the default ansatz at the
+ * given parameters, for quantum natural gradient.  Computed into a static
+ * row-major buffer; read back element-by-element so the FFI boundary stays
+ * scalar (the same strategy as the gradient context). */
+static vqe_solver_t* create_default_vqe_solver(pauli_hamiltonian_t* hamiltonian, int32_t iterations,
+                                               vqe_ansatz_t** ansatz_out, vqe_optimizer_t** optimizer_out);
+static double g_qgt_buffer[64];
+static int    g_qgt_dim = 0;
+int64_t eshkol_vqe_qgt_compute(int64_t handle, double p0, double p1, double p2, double p3) {
+    pauli_hamiltonian_t* ham = get_hamiltonian(handle);
+    if (!ham) { set_last_error("vqe-qgt: invalid Hamiltonian handle"); return -1; }
+    vqe_ansatz_t* ansatz = NULL; vqe_optimizer_t* optimizer = NULL;
+    vqe_solver_t* solver = create_default_vqe_solver(ham, 1, &ansatz, &optimizer);
+    if (!solver) return -1;
+    int64_t rc = -1;
+    if (ansatz->num_parameters == 4) {
+        double params[4] = { p0, p1, p2, p3 };
+        if (vqe_compute_qgt(solver, params, g_qgt_buffer) == 0) { g_qgt_dim = 4; rc = 4; }
+        else set_last_error("vqe-qgt: computation failed");
+    } else {
+        set_last_error("vqe-qgt: expected a 4-parameter ansatz");
+    }
+    vqe_solver_free(solver); vqe_optimizer_free(optimizer); vqe_ansatz_free(ansatz);
+    return rc;
+}
+double eshkol_vqe_qgt_get(int64_t i, int64_t j) {
+    if (g_qgt_dim <= 0 || i < 0 || j < 0 || i >= g_qgt_dim || j >= g_qgt_dim) return 0.0;
+    return g_qgt_buffer[i * g_qgt_dim + j];
+}
+
 /** Release a Hamiltonian handle. Safe on an already-released handle. */
 void eshkol_vqe_hamiltonian_destroy(int64_t handle) {
     if (handle < 1 || handle >= MAX_HAMILTONIAN_HANDLES) return;
@@ -1089,6 +1119,9 @@ int64_t eshkol_vqe_make_h2o_hamiltonian(void) { return -1; }
 int64_t eshkol_vqe_make_pauli5_hamiltonian(double g0, double g1, double g2,
                                            double g3, double g4, double nuc) {
     (void)g0; (void)g1; (void)g2; (void)g3; (void)g4; (void)nuc; return -1; }
+int64_t eshkol_vqe_qgt_compute(int64_t handle, double p0, double p1, double p2, double p3) {
+    (void)handle; (void)p0; (void)p1; (void)p2; (void)p3; return -1; }
+double eshkol_vqe_qgt_get(int64_t i, int64_t j) { (void)i; (void)j; return 0.0; }
 void eshkol_vqe_hamiltonian_destroy(int64_t handle) { (void)handle; }
 double eshkol_vqe_hamiltonian_exact_ground_energy(int64_t handle) {
     (void)handle;
