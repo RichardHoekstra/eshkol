@@ -1,0 +1,23 @@
+# Quantum-enabled Eshkol build (LLVM 21 + CMake 3.28 + Moonlab), to run the .esk examples.
+FROM ubuntu:22.04
+ENV DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y \
+      wget gnupg ninja-build g++ git ca-certificates xz-utils \
+      libreadline-dev pkg-config libssl-dev libncurses-dev \
+      libopenblas-dev liblapacke-dev liblapack-dev \
+      libpng-dev libjpeg-dev libwebp-dev \
+    && wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc \
+    && echo "deb http://apt.llvm.org/jammy/ llvm-toolchain-jammy-21 main" >> /etc/apt/sources.list.d/llvm.list \
+    && apt-get update && apt-get install -y llvm-21 llvm-21-dev clang-21 \
+    && ln -sf /usr/bin/llvm-config-21 /usr/bin/llvm-config \
+    && rm -rf /var/lib/apt/lists/*
+# Eshkol needs CMake >= 3.24 (DOWNLOAD_EXTRACT_TIMESTAMP); jammy ships 3.22.
+RUN cd /opt && wget -q https://github.com/Kitware/CMake/releases/download/v3.28.6/cmake-3.28.6-linux-x86_64.tar.gz \
+    && tar xf cmake-3.28.6-linux-x86_64.tar.gz && rm cmake-3.28.6-linux-x86_64.tar.gz \
+    && ln -sf /opt/cmake-3.28.6-linux-x86_64/bin/cmake /usr/local/bin/cmake
+WORKDIR /eshkol
+COPY . .
+RUN cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DESHKOL_QUANTUM_ENABLED=ON \
+    && test -f build/build.ninja && echo "=== CONFIGURE OK ==="
+RUN cmake --build build --parallel 2>&1 | tail -40 ; \
+    ( test -x build/eshkol-run || test -x build/eshkol ) && echo "=== ESHKOL BUILT ===" || (echo "=== ESHKOL BUILD FAILED ==="; exit 1)
