@@ -495,6 +495,26 @@ int64_t eshkol_vqe_make_h2o_hamiltonian(void) {
                              "make-h2o-hamiltonian: Moonlab allocation failed");
 }
 
+/** @return Handle for a 2-qubit Pauli Hamiltonian with the H2 term structure
+ * (II, IZ, ZI, ZZ, XX) assembled from the given coefficients and nuclear
+ * repulsion, or -1 on failure.  Lets Scheme build the auxiliary Hamiltonians
+ * sum_i g_i P_i (for a coefficient value / first / second derivative) needed to
+ * assemble a molecular Hessian from vqe-energy / vqe-gradient. */
+int64_t eshkol_vqe_make_pauli5_hamiltonian(double g0, double g1, double g2,
+                                           double g3, double g4, double nuc) {
+    pauli_hamiltonian_t* h = pauli_hamiltonian_create(2, 5);
+    if (h) {
+        pauli_hamiltonian_add_term(h, g0, "II", 0);
+        pauli_hamiltonian_add_term(h, g1, "IZ", 1);
+        pauli_hamiltonian_add_term(h, g2, "ZI", 2);
+        pauli_hamiltonian_add_term(h, g3, "ZZ", 3);
+        pauli_hamiltonian_add_term(h, g4, "XX", 4);
+        h->nuclear_repulsion = nuc;
+        h->hf_reference = 0x2;
+    }
+    return store_hamiltonian(h, "make-pauli5-hamiltonian: Moonlab allocation failed");
+}
+
 /** Release a Hamiltonian handle. Safe on an already-released handle. */
 void eshkol_vqe_hamiltonian_destroy(int64_t handle) {
     if (handle < 1 || handle >= MAX_HAMILTONIAN_HANDLES) return;
@@ -1066,6 +1086,9 @@ double eshkol_quantum_bell_chsh(int32_t num_trials) {
 int64_t eshkol_vqe_make_h2_hamiltonian(double bond_distance) { (void)bond_distance; return -1; }
 int64_t eshkol_vqe_make_lih_hamiltonian(double bond_distance) { (void)bond_distance; return -1; }
 int64_t eshkol_vqe_make_h2o_hamiltonian(void) { return -1; }
+int64_t eshkol_vqe_make_pauli5_hamiltonian(double g0, double g1, double g2,
+                                           double g3, double g4, double nuc) {
+    (void)g0; (void)g1; (void)g2; (void)g3; (void)g4; (void)nuc; return -1; }
 void eshkol_vqe_hamiltonian_destroy(int64_t handle) { (void)handle; }
 double eshkol_vqe_hamiltonian_exact_ground_energy(int64_t handle) {
     (void)handle;
