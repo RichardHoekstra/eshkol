@@ -1,0 +1,55 @@
+;; ============================================================
+;; Gaussian curvature of a surface z = h(u,v) by automatic differentiation
+;; ============================================================
+;;
+;; For a graph surface the Gaussian curvature is
+;;
+;;     K = (h_uu h_vv - h_uv^2) / (1 + h_u^2 + h_v^2)^2 .
+;;
+;; Every derivative is taken by Eshkol's `derivative-n`.  Pure second
+;; derivatives are direct; the MIXED partial h_uv is recovered from three pure
+;; second derivatives by the polarization identity
+;;
+;;     h_uv = 1/2 ( h_dd - h_uu - h_vv ),
+;;
+;; where h_dd is the second derivative along the diagonal t -> h(u+t, v+t).
+;; (Eshkol's derivative-n does not nest, so mixed partials go through this
+;; single-variable route.)  No finite differences anywhere.
+;;
+;; Self-checks against exact geometry: a sphere of radius R has K = 1/R^2
+;; everywhere; the saddle z = uv has K = -1 at the origin; the paraboloid
+;; z = (u^2+v^2)/2 has K = 1 at the origin.
+;;
+;; Run:  ./build/eshkol-run -r examples/gaussian_curvature_ad.esk
+
+(define (du  h u v) (derivative-n (lambda (x) (h x v)) u 1))
+(define (dv  h u v) (derivative-n (lambda (x) (h u x)) v 1))
+(define (duu h u v) (derivative-n (lambda (x) (h x v)) u 2))
+(define (dvv h u v) (derivative-n (lambda (x) (h u x)) v 2))
+(define (ddiag h u v) (derivative-n (lambda (t) (h (+ u t) (+ v t))) 0.0 2))
+(define (duv h u v) (* 0.5 (- (ddiag h u v) (+ (duu h u v) (dvv h u v)))))
+
+(define (gaussian-K h u v)
+  (let ((hu (du h u v)) (hv (dv h u v))
+        (huu (duu h u v)) (hvv (dvv h u v)) (huv (duv h u v)))
+    (/ (- (* huu hvv) (* huv huv))
+       (expt (+ 1.0 (* hu hu) (* hv hv)) 2))))
+
+;; --- surfaces ---------------------------------------------------------------
+(define R 2.0)
+(define (sphere u v) (sqrt (- (* R R) (* u u) (* v v))))   ; upper cap, K = 1/R^2
+(define (saddle u v) (* u v))                              ; K(0,0) = -1
+(define (parab  u v) (* 0.5 (+ (* u u) (* v v))))          ; K(0,0) = 1
+
+(display "Gaussian curvature by AD (exact geometry as the checker):") (newline)
+(display "  sphere R=2, K at (0,0)     = ") (display (gaussian-K sphere 0.0 0.0))
+(display "   (exact 1/R^2 = 0.25)") (newline)
+(display "  sphere R=2, K at (0.3,0.4) = ") (display (gaussian-K sphere 0.3 0.4))
+(display "   (exact 0.25, curvature is constant)") (newline)
+(display "  sphere R=2, K at (-0.5,0.2)= ") (display (gaussian-K sphere -0.5 0.2))
+(display "   (exact 0.25)") (newline)
+(display "  saddle z=uv, K at (0,0)    = ") (display (gaussian-K saddle 0.0 0.0))
+(display "   (exact -1)") (newline)
+(display "  paraboloid, K at (0,0)     = ") (display (gaussian-K parab 0.0 0.0))
+(display "   (exact 1)") (newline)
+(display "  all from derivative-n; mixed partials via the polarization identity.") (newline)

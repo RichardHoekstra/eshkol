@@ -1,0 +1,48 @@
+;; ============================================================
+;; The derivative of a matrix eigenvalue, two ways that must agree
+;; ============================================================
+;;
+;; For a symmetric A(p) with a simple eigenvalue lambda(p) and unit eigenvector
+;; v, the Hellmann-Feynman theorem gives  dlambda/dp = v^T (dA/dp) v.  Here:
+;;   * lambda(p) is the closed-form top eigenvalue of a 2x2 symmetric A(p);
+;;   * dlambda/dp is taken directly by Eshkol AD (`derivative-n`);
+;;   * the Hellmann-Feynman value v^T A'(p) v is formed from the AD-differentiated
+;;     matrix entries and the eigenvector.
+;; The two agree -- the eigenvalue derivative "just works" through AD, the same
+;; object as a molecular force or a circuit gradient.
+;;
+;; Run:  ./build/eshkol-run -r examples/eigenvalue_derivative_ad.esk
+
+;; A(p) = [[1+p, p^2],[p^2, 3 - p]]   (symmetric)
+(define (a11 p) (+ 1.0 p))
+(define (a12 p) (* p p))
+(define (a22 p) (- 3.0 p))
+
+;; top eigenvalue of the 2x2 symmetric matrix
+(define (lam p)
+  (let* ((s (* 0.5 (+ (a11 p) (a22 p))))
+         (d (* 0.5 (- (a11 p) (a22 p))))
+         (b (a12 p)))
+    (+ s (sqrt (+ (* d d) (* b b))))))
+
+;; its unit eigenvector at p (for the Hellmann-Feynman form)
+(define (eigvec p)
+  (let* ((l (lam p)) (x (- l (a22 p))) (y (a12 p))   ; (A - a22)·first-col style
+         (nrm (sqrt (+ (* x x) (* y y)))))
+    (vector (/ x nrm) (/ y nrm))))
+
+(define p0 1.5)
+(define dl-ad (derivative-n lam p0 1))               ; dlambda/dp by AD
+(define dl-hf                                          ; v^T (dA/dp) v
+  (let* ((v (eigvec p0))
+         (v1 (vector-ref v 0)) (v2 (vector-ref v 1))
+         (da11 (derivative-n a11 p0 1))
+         (da12 (derivative-n a12 p0 1))
+         (da22 (derivative-n a22 p0 1)))
+    (+ (* v1 v1 da11) (* 2.0 v1 v2 da12) (* v2 v2 da22))))
+
+(display "Eigenvalue derivative at p=1.5:") (newline)
+(display "  dlambda/dp  (AD, derivative-n) = ") (display dl-ad) (newline)
+(display "  v^T (dA/dp) v (Hellmann-Feynman) = ") (display dl-hf) (newline)
+(display "  agreement |diff| = ") (display (abs (- dl-ad dl-hf)))
+(display "   (the eigenvalue derivative = force = circuit gradient, one AD object)") (newline)

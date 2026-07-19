@@ -1,0 +1,66 @@
+;; ============================================================
+;; The classical path from the principle of least action, by reverse-mode AD
+;; ============================================================
+;;
+;; A ball under gravity, fixed endpoints x(0)=x(T)=0.  The action of a
+;; discretised path (interior points p_1..p_N) is
+;;
+;;     S[x] = sum 1/2 ((x_{i+1}-x_i)/dt)^2 dt  -  sum g x_i dt .
+;;
+;; Eshkol's reverse-mode `gradient` returns dS/dp_i (the discrete
+;; Euler-Lagrange residual) in one pass over all N coordinates; gradient
+;; descent drives the path to the stationary action.  The result is checked
+;; against the exact classical trajectory x(t) = (g/2) t (T - t), whose apex
+;; is x(T/2) = g T^2 / 8.
+;;
+;; Run:  ./build/eshkol-run -r examples/least_action_path_ad.esk
+
+(define N 9)
+(define T 2.0)
+(define g 1.0)
+(define dt (/ T (+ N 1)))
+
+;; full path value at index i (0..N+1): endpoints pinned to 0, interior from p.
+(define (xref p i)
+  (if (or (= i 0) (= i (+ N 1))) 0.0 (vector-ref p (- i 1))))
+
+(define (action p)
+  (let loop ((i 0) (s 0.0))
+    (if (> i N)
+        s
+        (let* ((xi  (xref p i))
+               (xi1 (xref p (+ i 1)))
+               (v   (/ (- xi1 xi) dt))
+               (kin (* 0.5 v v dt))
+               (pot (* g xi dt)))                 ; endpoint i=0 has xi=0 -> no pot
+          (loop (+ i 1) (+ s (- kin pot)))))))
+
+;; gradient descent on the action (reverse-mode AD gradient each step)
+(define (descend p lr steps)
+  (let loop ((p p) (k 0))
+    (if (>= k steps)
+        p
+        (let ((grad (gradient action p)))
+          (let ((next (make-vector N 0.0)))
+            (let iloop ((i 0))
+              (if (< i N)
+                  (begin
+                    (vector-set! next i (- (vector-ref p i) (* lr (vector-ref grad i))))
+                    (iloop (+ i 1)))))
+            (loop next (+ k 1)))))))
+
+(define p0 (make-vector N 0.0))                    ; start from the straight line x=0
+(define p* (descend p0 0.08 12000))
+
+(define (exact-x t) (* 0.5 g t (- T t)))                  ; classical trajectory
+(define mid (vector-ref p* (- (quotient (+ N 1) 2) 1)))   ; interior point at t = T/2
+(define maxerr
+  (let loop ((i 0) (m 0.0))
+    (if (< i N)
+        (loop (+ i 1) (max m (abs (- (vector-ref p* i) (exact-x (* (+ i 1) dt))))))
+        m)))
+(display "Least action by reverse-mode AD gradient descent:") (newline)
+(display "  apex x(T/2) found = ") (display mid)
+(display "   (exact g T^2 / 8 = ") (display (/ (* g T T) 8.0)) (display ")") (newline)
+(display "  max |path - exact parabola| over all points = ") (display maxerr) (newline)
+(display "  the discrete Euler-Lagrange residual (dS/dp) drove the path to the classical trajectory.") (newline)

@@ -1,0 +1,45 @@
+;; ============================================================
+;; Helium ground state: a correlated two-electron variational energy, with the
+;; exact dE0/dZ by AD -- and an honest look at the correlation gap
+;; ============================================================
+;;
+;; A sequel to hydrogen_variational_ad.esk.  With the two-electron trial
+;; psi = exp(-alpha (r1 + r2)) the Hartree-atomic energy has the closed form
+;;
+;;     E(alpha, Z) = alpha^2 - 2 Z alpha + (5/8) alpha ,
+;;
+;; where alpha^2 is the kinetic energy, -2 Z alpha the electron-nucleus
+;; attraction, and (5/8) alpha the exact expectation <1/r12> of the
+;; electron-electron repulsion for this trial.  Eshkol's derivative-n does the
+;; rest: Newton on dE/dalpha finds alpha* = Z - 5/16, and one AD pass in Z at the
+;; optimum gives the Hellmann-Feynman response dE0/dZ.
+;;
+;; Honest: this mean-field trial gives E0(He) = -(Z-5/16)^2 = -2.848 Ha at Z=2,
+;; about 0.056 Ha above the exact -2.9037 -- that residual IS the electron
+;; correlation the single-exponential ansatz cannot capture.
+;;
+;; Run:  ./build/eshkol-run -r examples/helium_variational_ad.esk
+
+(define (energy alpha Z)
+  (+ (* alpha alpha) (* -2.0 Z alpha) (* 0.625 alpha)))
+
+(define Z 2.0)
+(define (E-of-alpha a) (energy a Z))
+
+;; minimise over alpha by Newton on dE/dalpha (both derivatives by AD)
+(define alpha*
+  (let loop ((a 2.0) (i 0))
+    (if (>= i 8) a
+        (loop (- a (/ (derivative-n E-of-alpha a 1)
+                      (derivative-n E-of-alpha a 2)))
+              (+ i 1)))))
+
+(define E0 (energy alpha* Z))
+(define dE0/dZ (derivative-n (lambda (z) (energy alpha* z)) Z 1))   ; Hellmann-Feynman
+
+(display "Helium variational ground state (psi = exp(-alpha(r1+r2))):") (newline)
+(display "  alpha*   = ") (display alpha*)   (display "   (exact Z - 5/16 = 1.6875)") (newline)
+(display "  E0       = ") (display E0)       (display "   Ha   (variational; exact He = -2.9037)") (newline)
+(display "  correlation gap = ") (display (- E0 -2.9037))
+(display " Ha  (what the single-exponential ansatz misses)") (newline)
+(display "  dE0/dZ   = ") (display dE0/dZ)   (display "   (Hellmann-Feynman, by AD at the optimum)") (newline)

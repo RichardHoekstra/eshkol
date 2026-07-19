@@ -1,0 +1,66 @@
+;; ============================================================
+;; Differentiating through an ODE integrator: exact sensitivity + Newton shooting
+;; ============================================================
+;;
+;; An RK4 integrator is ordinary Eshkol code, so `derivative-n` differentiates
+;; straight through it -- the adjoint/sensitivity with no finite differences.
+;;
+;;  (a) For the linear flow dx/dt = -k x, x(T) = x0 e^{-kT}, so the exact
+;;      sensitivity dx(T)/dx0 = e^{-kT}.  AD through RK4 must reproduce it.
+;;  (b) A shooting problem: a ball thrown up with linear drag, height y(T) after
+;;      a fixed time is a smooth function of the launch speed v0.  Newton on
+;;      y(T)-target, with the derivative dy(T)/dv0 taken by AD through the
+;;      integrator, hits the target.
+;;
+;; Run:  ./build/eshkol-run -r examples/ode_sensitivity_shooting_ad.esk
+
+;; ---- generic RK4: one scalar state, rhs f(x), fixed step -------------------
+(define (rk4-final f x0 T steps)
+  (let ((dt (/ T steps)))
+    (let loop ((x x0) (i 0))
+      (if (>= i steps)
+          x
+          (let* ((k1 (f x))
+                 (k2 (f (+ x (* 0.5 dt k1))))
+                 (k3 (f (+ x (* 0.5 dt k2))))
+                 (k4 (f (+ x (* dt k3)))))
+            (loop (+ x (* (/ dt 6.0) (+ k1 (* 2.0 k2) (* 2.0 k3) k4))) (+ i 1)))))))
+
+;; (a) exact sensitivity of the linear flow
+(define k 0.7)
+(define Tlin 2.0)
+(define (xT x0) (rk4-final (lambda (x) (* (- k) x)) x0 Tlin 200))
+(display "(a) AD through RK4 = the exact adjoint:") (newline)
+(display "    dx(T)/dx0 (AD)   = ") (display (derivative-n xT 1.0 1))
+(display "   (exact e^{-kT} = ") (display (exp (* (- k) Tlin))) (display ")") (newline)
+
+;; (b) shooting: throw up with linear drag, hit height TARGET at time Tf.
+;;   y'' = -g - c y' ; integrate the 2-vector (y, vy) by RK4 (component form).
+(define g 9.81) (define c 0.3) (define Tf 0.6) (define target 1.0)
+(define (yT v0)
+  (let ((dt (/ Tf 200)))
+    (let loop ((y 0.0) (vy v0) (i 0))
+      (if (>= i 200)
+          y
+          ;; RK4 on the pair (y' = vy, vy' = -g - c vy)
+          (let* ((ay (lambda (vv) vv))
+                 (av (lambda (vv) (- (- g) (* c vv))))
+                 (k1y (ay vy))           (k1v (av vy))
+                 (k2y (ay (+ vy (* 0.5 dt k1v)))) (k2v (av (+ vy (* 0.5 dt k1v))))
+                 (k3y (ay (+ vy (* 0.5 dt k2v)))) (k3v (av (+ vy (* 0.5 dt k2v))))
+                 (k4y (ay (+ vy (* dt k3v))))     (k4v (av (+ vy (* dt k3v)))))
+            (loop (+ y  (* (/ dt 6.0) (+ k1y (* 2.0 k2y) (* 2.0 k3y) k4y)))
+                  (+ vy (* (/ dt 6.0) (+ k1v (* 2.0 k2v) (* 2.0 k3v) k4v)))
+                  (+ i 1)))))))
+
+(define v0*
+  (let loop ((v0 8.0) (i 0))
+    (if (>= i 12) v0
+        (let ((miss (- (yT v0) target))
+              (slope (derivative-n (lambda (v) (yT v)) v0 1)))   ; dy(T)/dv0 by AD
+          (loop (- v0 (/ miss slope)) (+ i 1))))))
+
+(display "(b) Newton shooting (dy(T)/dv0 by AD through the integrator):") (newline)
+(display "    launch speed v0* = ") (display v0*) (newline)
+(display "    achieved y(T)    = ") (display (yT v0*))
+(display "   (target ") (display target) (display ")") (newline)
