@@ -1,0 +1,68 @@
+;; ============================================================
+;; Hydrogen ground state from a real-space Coulomb Rayleigh
+;; quotient, with the exact energy DERIVATIVE by Eshkol AD.
+;; ============================================================
+;;
+;; A complement to h2_vibrational.esk (STO-3G basis + 2x2 CI, d/dR) and the
+;; gate-VQE AD tests (parameterised ansatz): here the bound state is a
+;; REAL-SPACE Coulomb problem.  The 1s trial psi(r) = exp(-alpha r) is placed
+;; on a radial grid and its Rayleigh quotient
+;;
+;;     E(alpha, Z) = <psi| -1/2 nabla^2 - Z/r |psi> / <psi|psi>
+;;
+;; is computed by ordinary Eshkol quadrature.  Eshkol then differentiates it:
+;;   * dE/dalpha (via derivative-n) drives a Newton minimisation to alpha* = Z,
+;;     giving the exact ground-state energy E0 = -Z^2/2  (= -0.5 Hartree at Z=1);
+;;   * dE0/dZ (via derivative-n at the optimum) is the exact Hellmann-Feynman
+;;     response  dE0/dZ = <psi|dH/dZ|psi> = -<1/r> = -alpha* = -Z,
+;;     obtained WITHOUT re-optimising -- the eigenvalue derivative from the same
+;;     AD machinery, on a continuous Hamiltonian.
+;;
+;; Run:  ./build/eshkol-run -r examples/hydrogen_variational_ad.esk
+
+;; ---- radial grid (cell-centred, avoids r = 0) --------------------------------
+(define N 2000)
+(define rmax 30.0)
+(define h (/ rmax N))
+(define (rcoord i) (* (+ i 0.5) h))
+
+;; ---- Rayleigh quotient of psi(r) = exp(-alpha r) on the grid -----------------
+;; For a 1s exponential the radial integrands (4*pi cancels in the ratio) are
+;;   norm     :  e^{-2a r} r^2
+;;   kinetic  :  1/2 (psi')^2 r^2 = 1/2 a^2 e^{-2a r} r^2
+;;   potential: -Z/r * e^{-2a r} r^2 = -Z e^{-2a r} r
+(define (energy alpha Z)
+  (let loop ((i 0) (snorm 0.0) (skin 0.0) (spot 0.0))
+    (if (< i N)
+        (let* ((r (rcoord i))
+               (w (exp (* -2.0 alpha r)))
+               (wr2 (* w r r)))
+          (loop (+ i 1)
+                (+ snorm (* wr2 h))
+                (+ skin  (* 0.5 alpha alpha wr2 h))
+                (+ spot  (* (- Z) w r h))))
+        (/ (+ skin spot) snorm))))
+
+;; ---- minimise over alpha at Z = 1 by Newton on dE/dalpha (Eshkol AD) ---------
+(define Z0 1.0)
+(define (E-of-alpha a) (energy a Z0))
+(define alpha*
+  (let loop ((a 1.7) (i 0))
+    (if (>= i 8) a
+        (let ((g  (derivative-n E-of-alpha a 1))     ;; dE/dalpha
+              (hh (derivative-n E-of-alpha a 2)))     ;; d2E/dalpha^2
+          (loop (- a (/ g hh)) (+ i 1))))))
+
+(define E0 (energy alpha* Z0))
+
+;; ---- Hellmann-Feynman response dE0/dZ by AD at the optimum -------------------
+;; At alpha* the total dE0/dZ equals the partial d/dZ at fixed alpha (dE/dalpha=0),
+;; so one AD pass in Z gives the exact eigenvalue derivative -- no re-optimisation.
+(define dE0/dZ (derivative-n (lambda (z) (energy alpha* z)) Z0 1))
+
+;; ---- report + self-check against the analytic hydrogen answers ---------------
+(display "Real-space variational hydrogen (psi = exp(-alpha r), radial quadrature):") (newline)
+(display "  alpha*   = ") (display alpha*)  (display "   (exact 1.0)") (newline)
+(display "  E0       = ") (display E0)      (display "   (exact -0.5 Hartree)") (newline)
+(display "  dE0/dZ   = ") (display dE0/dZ)  (display "   (exact Hellmann-Feynman -Z = -1.0)") (newline)
+(display "  all three from the SAME Eshkol AD (derivative-n) on a continuous Coulomb H.") (newline)
