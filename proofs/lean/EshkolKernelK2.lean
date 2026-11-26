@@ -43,6 +43,7 @@ def FramePool.Conserved (p : FramePool) : Prop :=
 
 inductive PoolOp where
   | allocUser (idx : Nat)
+  | allocKernel (idx : Nat)
   | freeUser (idx : Nat) (gen : Nat)
   deriving DecidableEq, Repr
 
@@ -54,6 +55,15 @@ def FramePool.step (p : FramePool) (op : PoolOp) : FramePool :=
         freeCount := p.freeCount - 1
         allocatedCount := p.allocatedCount + 1
         owners := fun i => if i = idx then .user else p.owners i
+        generations := fun i => if i = idx then p.generations idx + 1 else p.generations i }
+    else
+      p
+  | .allocKernel idx =>
+    if idx < p.totalFrames ∧ p.owners idx = .free ∧ 0 < p.freeCount then
+      { p with
+        freeCount := p.freeCount - 1
+        allocatedCount := p.allocatedCount + 1
+        owners := fun i => if i = idx then .kernel else p.owners i
         generations := fun i => if i = idx then p.generations idx + 1 else p.generations i }
     else
       p
@@ -86,6 +96,14 @@ theorem pool_step_preserves_conservation (p : FramePool) (op : PoolOp)
   unfold FramePool.Conserved at *
   cases op with
   | allocUser idx =>
+    unfold FramePool.step
+    dsimp only
+    split
+    · rename_i hcond
+      dsimp only
+      omega
+    · exact h
+  | allocKernel idx =>
     unfold FramePool.step
     dsimp only
     split
@@ -181,6 +199,18 @@ theorem pool_step_preserves_accounted (p : FramePool) (op : PoolOp)
       have cf := countOwnedBelow_update p.owners .free .free .user idx hown p.totalFrames hlt
       have cu := countOwnedBelow_update p.owners .user .free .user idx hown p.totalFrames hlt
       have ck := countOwnedBelow_update p.owners .kernel .free .user idx hown p.totalFrames hlt
+      simp at cf cu ck
+      exact ⟨by dsimp only; omega, by dsimp only; omega⟩
+    · exact ⟨hfree, halloc⟩
+  | allocKernel idx =>
+    unfold FramePool.step
+    dsimp only
+    split
+    · rename_i hcond
+      obtain ⟨hlt, hown, _⟩ := hcond
+      have cf := countOwnedBelow_update p.owners .free .free .kernel idx hown p.totalFrames hlt
+      have cu := countOwnedBelow_update p.owners .user .free .kernel idx hown p.totalFrames hlt
+      have ck := countOwnedBelow_update p.owners .kernel .free .kernel idx hown p.totalFrames hlt
       simp at cf cu ck
       exact ⟨by dsimp only; omega, by dsimp only; omega⟩
     · exact ⟨hfree, halloc⟩
